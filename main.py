@@ -7,8 +7,12 @@ from threading import Thread
 
 from telegram import Update
 from telegram.ext import (
-    ApplicationBuilder, CommandHandler, MessageHandler, ConversationHandler,
-    ContextTypes, filters
+    ApplicationBuilder,
+    CommandHandler,
+    MessageHandler,
+    filters,
+    ContextTypes,
+    ConversationHandler,
 )
 
 import gspread
@@ -23,59 +27,51 @@ creds_dict = json.loads(os.environ["GOOGLE_CREDS_JSON"])
 scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
 creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
 
+# === GOOGLE SERVICES ===
 gc = gspread.authorize(creds)
 sheet = gc.open_by_key(SPREADSHEET_ID).sheet1
-drive = build("drive", "v3", credentials=creds)
+drive = build('drive', 'v3', credentials=creds)
 
-# === STATE MACHINE ===
+# === CONVERSATION STATES ===
 NAMA, NOMINAL, JENIS, QRIS, CASH, KETERANGAN, FOTO = range(7)
 user_data = {}
 
-# === FLASK KEEP ALIVE ===
-app = Flask(__name__)
-@app.route('/')
-def index():
-    return "Bot hidup bro (Render version)"
-
-def run_flask():
-    app.run(host='0.0.0.0', port=8080)
-
-# === HANDLERS ===
+# === BOT COMMAND HANDLERS ===
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Halo! Ketik /lapor untuk kirim laporan harian ya.")
+    await update.message.reply_text("Halo! Ketik /lapor untuk kirim laporan harian.")
 
 async def lapor(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Siapa nama kamu hari ini?")
+    await update.message.reply_text("Siapa namamu hari ini?")
     return NAMA
 
 async def input_nama(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_data["nama"] = update.message.text
+    user_data['nama'] = update.message.text
     await update.message.reply_text("Total nominal transaksi hari ini?")
     return NOMINAL
 
 async def input_nominal(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_data["nominal"] = update.message.text
+    user_data['nominal'] = update.message.text
     await update.message.reply_text("Ini laporan 'pengeluaran' atau 'pendapatan'?")
     return JENIS
 
 async def input_jenis(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_data["jenis"] = update.message.text
+    user_data['jenis'] = update.message.text
     await update.message.reply_text("Berapa via QRIS?")
     return QRIS
 
 async def input_qris(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_data["qris"] = update.message.text
+    user_data['qris'] = update.message.text
     await update.message.reply_text("Berapa via CASH?")
     return CASH
 
 async def input_cash(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_data["cash"] = update.message.text
+    user_data['cash'] = update.message.text
     await update.message.reply_text("Keterangan tambahan?")
     return KETERANGAN
 
 async def input_keterangan(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_data["keterangan"] = update.message.text
-    await update.message.reply_text("Upload foto bon sekarang ya (wajib bro)!")
+    user_data['keterangan'] = update.message.text
+    await update.message.reply_text("Upload foto bon sekarang (wajib ya bro)?")
     return FOTO
 
 async def input_foto(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -90,7 +86,7 @@ async def input_foto(update: Update, context: ContextTypes.DEFAULT_TYPE):
     upload = drive.files().create(body=file_metadata, media_body=media, fields='id').execute()
     drive_link = f"https://drive.google.com/file/d/{upload['id']}"
 
-    # Simpan ke Google Sheet
+    # Tulis ke Google Sheets
     sheet.append_row([
         datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         user_data['nama'],
@@ -111,15 +107,25 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Laporan dibatalkan.")
     return ConversationHandler.END
 
+# === FLASK KEEP ALIVE ===
+app = Flask(__name__)
+
+@app.route('/')
+def home():
+    return "Bot hidup bro (Render version)"
+
+def run_flask():
+    app.run(host='0.0.0.0', port=8080)
+
 # === MAIN ===
-if __name__ == "__main__":
+if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO)
     Thread(target=run_flask).start()
 
     app_bot = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
 
     conv_handler = ConversationHandler(
-        entry_points=[CommandHandler("lapor", lapor)],
+        entry_points=[CommandHandler('lapor', lapor)],
         states={
             NAMA: [MessageHandler(filters.TEXT & ~filters.COMMAND, input_nama)],
             NOMINAL: [MessageHandler(filters.TEXT & ~filters.COMMAND, input_nominal)],
@@ -129,11 +135,11 @@ if __name__ == "__main__":
             KETERANGAN: [MessageHandler(filters.TEXT & ~filters.COMMAND, input_keterangan)],
             FOTO: [MessageHandler(filters.PHOTO, input_foto)],
         },
-        fallbacks=[CommandHandler("cancel", cancel)]
+        fallbacks=[CommandHandler('cancel', cancel)]
     )
 
     app_bot.add_handler(CommandHandler("start", start))
     app_bot.add_handler(conv_handler)
 
-    print("Bot jalan bro! CTRL+C buat stop.")
+    print("Bot jalan... tekan CTRL+C untuk stop.")
     app_bot.run_polling()
